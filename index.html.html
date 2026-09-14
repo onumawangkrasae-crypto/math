@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AR Cyber-Web Math: ยิงใยคณิตศาสตร์ ป.1</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600;800&family=Prompt:wght@500;700&display=swap" rel="stylesheet">
+    
+    <!-- MediaPipe Hands -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <style>
+        body {
+            font-family: 'Kanit', sans-serif;
+            overflow: hidden;
+            background-color: #0f172a;
+            touch-action: none;
+        }
+        
+        .font-prompt { font-family: 'Prompt', sans-serif; }
+        
+        /* Comic Pop Text Styles */
+        .text-comic {
+            color: #fbbf24;
+            text-shadow: 3px 3px 0px #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;
+            letter-spacing: 1px;
+        }
+        .text-glow-cyan {
+            color: #22d3ee;
+            text-shadow: 0 0 10px #06b6d4, 0 0 20px #0891b2, 2px 2px 0px #000;
+        }
+
+        /* 3D Clay Bubbles */
+        .bubble {
+            background: radial-gradient(circle at 30% 30%, #ef4444, #991b1b);
+            box-shadow: 
+                inset -5px -5px 15px rgba(0,0,0,0.5), 
+                inset 5px 5px 15px rgba(255,255,255,0.4),
+                0 10px 15px rgba(0,0,0,0.5);
+            border: 3px solid #f87171;
+            transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        .bubble.locked {
+            transform: scale(1.2);
+            box-shadow: 0 0 30px #22d3ee, inset -5px -5px 15px rgba(0,0,0,0.5), inset 5px 5px 15px rgba(255,255,255,0.4);
+            border-color: #22d3ee;
+            background: radial-gradient(circle at 30% 30%, #3b82f6, #1e3a8a);
+        }
+
+        /* Hero Card */
+        .hero-card {
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(10px);
+            border: 4px solid #fbbf24;
+            box-shadow: 0 0 20px rgba(251, 191, 36, 0.5), inset 0 0 20px rgba(220, 38, 38, 0.5);
+            background-image: repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(220, 38, 38, 0.1) 10px, rgba(220, 38, 38, 0.1) 20px);
+        }
+
+        /* Animations */
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            20%, 60% { transform: translateX(-10px) rotate(-2deg); }
+            40%, 80% { transform: translateX(10px) rotate(2deg); }
+        }
+        .shake { animation: shake 0.4s ease-in-out; }
+        
+        @keyframes toastFloat {
+            0% { opacity: 0; transform: translateY(20px) scale(0.9); }
+            10%, 90% { opacity: 1; transform: translateY(0) scale(1); }
+            100% { opacity: 0; transform: translateY(-20px) scale(0.9); }
+        }
+        .toast-anim { animation: toastFloat 2s forwards; }
+
+        /* Canvas overlay */
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            pointer-events: none;
+        }
+        video { display: none; }
+        
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 20; pointer-events: none; }
+        .pointer-auto { pointer-events: auto; }
+    </style>
+</head>
+<body class="text-white select-none">
+
+    <!-- WebCam Video & Canvas -->
+    <video id="input_video" autoplay playsinline></video>
+    <canvas id="output_canvas"></canvas>
+
+    <!-- Main UI Layer -->
+    <div id="ui-layer" class="flex flex-col justify-between p-4">
+        
+        <!-- Header HUD -->
+        <div class="flex justify-between items-start pointer-auto">
+            <div class="bg-slate-900/80 p-3 rounded-xl border-2 border-cyan-400 shadow-[0_0_15px_#22d3ee]">
+                <h1 class="text-xl md:text-2xl font-black text-comic">🕸️ CYBER-WEB MATH</h1>
+                <div class="text-sm font-bold text-gray-300">ระดับ: ป.1</div>
+            </div>
+            
+            <div class="flex flex-col items-end space-y-2">
+                <div class="bg-slate-900/80 px-4 py-2 rounded-xl border-2 border-yellow-400">
+                    <div class="text-xs text-yellow-400 font-bold">SCORE</div>
+                    <div id="scoreDisplay" class="text-3xl font-black text-white leading-none">0</div>
+                </div>
+                <div id="comboDisplay" class="text-glow-cyan font-black text-xl hidden">COMBO x2!</div>
+                <div class="bg-red-600/80 px-3 py-1 rounded-full border border-white font-bold text-sm">
+                    ข้อ <span id="qCount">1/9</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Question Card -->
+        <div id="gameContainer" class="hidden flex-1 flex flex-col items-center justify-center mt-4">
+            <div id="questionCard" class="hero-card rounded-2xl p-6 md:p-10 mb-8 transform transition-transform text-center w-full max-w-md pointer-auto">
+                <div class="text-cyan-300 font-bold text-lg mb-2 tracking-wider">ภารกิจที่ <span id="qNumBadge">1</span></div>
+                <div id="questionText" class="text-5xl md:text-6xl font-black text-white text-shadow-md tracking-widest font-prompt">
+                    3 + 4 = ?
+                </div>
+            </div>
+
+            <!-- Toast Alert -->
+            <div id="toastAlert" class="hidden bg-cyan-900/80 text-cyan-200 px-6 py-2 rounded-full border border-cyan-400 backdrop-blur-sm font-bold text-lg pointer-auto shadow-[0_0_15px_#22d3ee]">
+                เป้าหมายถูกล็อค! ยิงเลย!
+            </div>
+
+            <!-- Answer Bubbles -->
+            <div id="bubblesContainer" class="grid grid-cols-2 gap-6 md:gap-10 mt-8 pointer-auto w-full max-w-lg px-4">
+            </div>
+        </div>
+
+        <!-- Bottom Bar -->
+        <div id="bottomBar" class="hidden justify-center items-center pointer-auto pb-4">
+            <button id="manualShootBtn" class="bg-gradient-to-r from-yellow-500 to-red-600 hover:from-yellow-400 hover:to-red-500 text-white font-black text-xl py-4 px-10 rounded-full shadow-[0_0_20px_#ef4444] border-2 border-white transform transition active:scale-95 flex items-center gap-3">
+                <span class="text-3xl">🤟</span> ยิงใย!
+            </button>
+        </div>
+    </div>
+
+    <!-- Start Modal -->
+    <div id="startModal" class="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/90 backdrop-blur-md px-4">
+        <div class="bg-slate-800 p-8 rounded-3xl border-4 border-cyan-500 shadow-[0_0_30px_#06b6d4] max-w-md w-full text-center relative overflow-hidden">
+            <h1 class="text-4xl font-black text-comic mb-2 leading-tight">AR CYBER-WEB<br>MATH ป.1</h1>
+            <p class="text-gray-300 font-medium mb-6">ฝึกสมองประลองความไวด้วยพลังฮีโร่!</p>
+            
+            <div id="loadingText" class="text-yellow-400 font-bold animate-pulse mb-4">
+                กำลังเปิดใช้งานระบบชุดสูท (โหลดกล้อง)...
+            </div>
+            
+            <button id="startBtn" disabled class="w-full bg-gradient-to-r from-cyan-600 to-blue-700 hover:from-cyan-500 hover:to-blue-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-black text-2xl py-4 rounded-xl shadow-lg border border-cyan-300 transition-all transform hover:scale-105 active:scale-95">
+                START MISSION
+            </button>
+        </div>
+    </div>
+
+    <!-- Victory Modal -->
+    <div id="victoryModal" class="hidden absolute inset-0 z-50 flex items-center justify-center bg-slate-900/90 backdrop-blur-md px-4">
+        <div class="bg-slate-800 p-8 rounded-3xl border-4 border-yellow-400 shadow-[0_0_40px_#fbbf24] max-w-md w-full text-center">
+            <h2 class="text-5xl font-black text-comic mb-4">MISSION COMPLETE!</h2>
+            <div id="starsContainer" class="flex justify-center gap-4 mb-6 text-6xl"></div>
+            <div class="text-2xl font-bold text-white mb-2">คะแนนรวม</div>
+            <div id="finalScore" class="text-6xl font-black text-glow-cyan mb-8 font-prompt">0</div>
+            <button onclick="location.reload()" class="w-full bg-gradient-to-r from-yellow-500 to-red-600 hover:from-yellow-400 hover:to-red-500 text-white font-black text-xl py-4 rounded-xl shadow-[0_0_15px_#ef4444] border-2 border-white transition-all transform active:scale-95">
+                เล่นอีกครั้ง 🔄
+            </button>
+        </div>
+    </div>
+
+    <script>
+        /* =========================================
+           1. Audio & Voice Synthesizer
+           ========================================= */
+        const AudioSys = {
+            ctx: null,
+            init() {
+                if (!this.ctx) {
+                    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                if (this.ctx.state === 'suspended') this.ctx.resume();
+                
+                // Warm up speech synthesis (helps load voices on some browsers)
+                if ('speechSynthesis' in window) window.speechSynthesis.getVoices();
+            },
+            
+            // เพิ่มฟังก์ชันเสียงพูดภาษาไทยน่ารักๆ
+            speak(text) {
+                if ('speechSynthesis' in window) {
+                    window.speechSynthesis.cancel(); // ยกเลิกเสียงพูดที่ค้างอยู่
+                    const utterance = new SpeechSynthesisUtterance(text);
+                    utterance.lang = 'th-TH';
+                    utterance.pitch = 1.6; // ปรับเสียงให้แหลมขึ้น (เสียงเล็กน่ารัก)
+                    utterance.rate = 1.0;  // ความเร็วปกติ
+                    window.speechSynthesis.speak(utterance);
+                }
+            },
+
+            playThwip() {
+                if(!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(800, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(100, this.ctx.currentTime + 0.15);
+                gain.gain.setValueAtTime(0, this.ctx.currentTime);
+                gain.gain.linearRampToValueAtTime(0.5, this.ctx.currentTime + 0.02);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.2);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.2);
+            },
+            playCorrect() {
+                if(!this.ctx) return;
+                const playNote = (freq, time, type='sine') => {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = type;
+                    osc.frequency.value = freq;
+                    gain.gain.setValueAtTime(0, this.ctx.currentTime + time);
+                    gain.gain.linearRampToValueAtTime(0.3, this.ctx.currentTime + time + 0.05);
+                    gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + time + 0.3);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start(this.ctx.currentTime + time);
+                    osc.stop(this.ctx.currentTime + time + 0.3);
+                };
+                playNote(523.25, 0);      
+                playNote(659.25, 0.1);    
+                playNote(783.99, 0.2);    
+                playNote(1046.50, 0.3);   
+            },
+            playWrong() {
+                if(!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(300, this.ctx.currentTime);
+                osc.frequency.linearRampToValueAtTime(150, this.ctx.currentTime + 0.3);
+                gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.4);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.4);
+            },
+            playWin() {
+                if(!this.ctx) return;
+                [0, 0.15, 0.3, 0.45].forEach((time, i) => {
+                    const freqs = [440, 554.37, 659.25, 880];
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'triangle';
+                    osc.frequency.value = freqs[i];
+                    gain.gain.setValueAtTime(0, this.ctx.currentTime + time);
+                    gain.gain.linearRampToValueAtTime(0.4, this.ctx.currentTime + time + 0.1);
+                    gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + time + 0.6);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start(this.ctx.currentTime + time);
+                    osc.stop(this.ctx.currentTime + time + 0.6);
+                });
+            }
+        };
+
+        /* =========================================
+           2. Math Generator (Grade 1 Logic)
+           ========================================= */
+        const MathGen = {
+            generateQuestion() {
+                const types = [1, 2, 3, 4];
+                const type = types[Math.floor(Math.random() * types.length)];
+                let qText, ans;
+                const rand = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+                const getWrongs = (correct) => {
+                    let w = new Set();
+                    while(w.size < 3) {
+                        let offset = rand(-3, 3);
+                        if(offset === 0) offset = rand(1,4);
+                        let val = correct + offset;
+                        if(val >= 0 && val !== correct) w.add(val);
+                    }
+                    return Array.from(w);
+                };
+
+                if(type === 1) { 
+                    let a = rand(1, 9), b = rand(1, 9);
+                    qText = `${a} + ${b} = ?`;
+                    ans = a + b;
+                } else if(type === 2) { 
+                    let a = rand(5, 19), b = rand(1, a-1);
+                    qText = `${a} - ${b} = ?`;
+                    ans = a - b;
+                } else if(type === 3) { 
+                    let a = rand(1, 9), c = rand(a+1, 18);
+                    qText = `${a} + [ ? ] = ${c}`;
+                    ans = c - a;
+                } else { 
+                    let a = rand(2, 9), b = rand(1, 5);
+                    qText = `อะไรมากกว่า ${a} อยู่ ${b}?`;
+                    ans = a + b;
+                }
+                
+                let choices = [ans, ...getWrongs(ans)];
+                choices.sort(() => Math.random() - 0.5); 
+                return { text: qText, ans: ans, choices: choices };
+            }
+        };
+
+        /* =========================================
+           3. Game State & Logic
+           ========================================= */
+        const Game = {
+            state: {
+                totalQ: 9, currentQ: 0, score: 0, combo: 0, isPlaying: false, currentAnswer: null, isAnimating: false
+            },
+            
+            init() {
+                document.getElementById('startBtn').addEventListener('click', () => {
+                    AudioSys.init();
+                    document.getElementById('startModal').classList.add('hidden');
+                    document.getElementById('gameContainer').classList.remove('hidden');
+                    document.getElementById('bottomBar').style.display = 'flex'; 
+                    this.state.isPlaying = true;
+                    this.nextQuestion();
+                });
+
+                document.getElementById('manualShootBtn').addEventListener('click', () => {
+                    if(!this.state.isPlaying || this.state.isAnimating) return;
+                    if(ARSystem.lockedBubbleIndex !== -1) {
+                        this.shootWebTo(ARSystem.lockedBubbleIndex);
+                    } else {
+                        AudioSys.playThwip();
+                    }
+                });
+            },
+
+            nextQuestion() {
+                if (this.state.currentQ >= this.state.totalQ) {
+                    this.endGame();
+                    return;
+                }
+                this.state.currentQ++;
+                document.getElementById('qCount').innerText = `${this.state.currentQ}/${this.state.totalQ}`;
+                document.getElementById('qNumBadge').innerText = this.state.currentQ;
+                
+                const q = MathGen.generateQuestion();
+                document.getElementById('questionText').innerText = q.text;
+                this.state.currentAnswer = q.ans;
+                
+                const container = document.getElementById('bubblesContainer');
+                container.innerHTML = '';
+                
+                q.choices.forEach((choice, index) => {
+                    const btn = document.createElement('button');
+                    btn.className = `bubble w-full aspect-square rounded-[2rem] flex items-center justify-center text-5xl md:text-6xl font-black text-white transform transition-all cursor-pointer shadow-lg bubble-item font-prompt`;
+                    btn.innerText = choice;
+                    btn.dataset.val = choice;
+                    btn.onclick = () => {
+                        if(this.state.isPlaying && !this.state.isAnimating) this.handleAnswer(choice, index);
+                    };
+                    container.appendChild(btn);
+                });
+                ARSystem.lockedBubbleIndex = -1;
+            },
+
+            shootWebTo(bubbleIndex) {
+                this.state.isAnimating = true;
+                const bubbles = document.querySelectorAll('.bubble-item');
+                const target = bubbles[bubbleIndex];
+                const val = parseInt(target.dataset.val);
+                
+                AudioSys.playThwip();
+                ARSystem.triggerWebShoot(target);
+
+                setTimeout(() => {
+                    this.handleAnswer(val, bubbleIndex);
+                }, 300); 
+            },
+
+            handleAnswer(val, bubbleIndex) {
+                const isCorrect = (val === this.state.currentAnswer);
+                const card = document.getElementById('questionCard');
+                const bubbles = document.querySelectorAll('.bubble-item');
+                const target = bubbles[bubbleIndex];
+
+                if (isCorrect) {
+                    AudioSys.playCorrect();
+                    AudioSys.speak("เก่งมากค่ะ"); // เรียกใช้เสียงพูด
+                    
+                    target.style.background = 'radial-gradient(circle at 30% 30%, #4ade80, #166534)';
+                    target.style.borderColor = '#4ade80';
+                    card.classList.add('shake');
+                    
+                    this.state.combo++;
+                    this.state.score += (100 * this.state.combo);
+                    document.getElementById('scoreDisplay').innerText = this.state.score;
+                    
+                    if(this.state.combo > 1) {
+                        const comboUI = document.getElementById('comboDisplay');
+                        comboUI.innerText = `COMBO x${this.state.combo}!`;
+                        comboUI.classList.remove('hidden');
+                        comboUI.classList.add('toast-anim');
+                        setTimeout(() => { comboUI.classList.add('hidden'); comboUI.classList.remove('toast-anim'); }, 2000);
+                    }
+
+                    const rect = target.getBoundingClientRect();
+                    ARSystem.spawnParticles(rect.left + rect.width/2, rect.top + rect.height/2, '#4ade80');
+                    
+                } else {
+                    AudioSys.playWrong();
+                    AudioSys.speak("ไม่เป็นรัยน๊า"); // เรียกใช้เสียงพูด
+                    
+                    target.style.background = 'radial-gradient(circle at 30% 30%, #64748b, #334155)';
+                    target.style.borderColor = '#64748b';
+                    target.classList.add('opacity-50');
+                    this.state.combo = 0;
+                    
+                    bubbles.forEach(b => {
+                        if(parseInt(b.dataset.val) === this.state.currentAnswer) {
+                            b.style.background = 'radial-gradient(circle at 30% 30%, #4ade80, #166534)';
+                            b.style.borderColor = '#4ade80';
+                        }
+                    });
+                }
+
+                setTimeout(() => {
+                    card.classList.remove('shake');
+                    this.state.isAnimating = false;
+                    this.nextQuestion();
+                }, 1500);
+            },
+
+            endGame() {
+                this.state.isPlaying = false;
+                AudioSys.playWin();
+                AudioSys.speak("เย้ ภารกิจสำเร็จแล้ว เก่งมากๆ เลยค่ะ");
+                
+                let stars = 1;
+                if(this.state.score > this.state.totalQ * 100) stars = 2;
+                if(this.state.score > this.state.totalQ * 200) stars = 3;
+
+                document.getElementById('gameContainer').classList.add('hidden');
+                document.getElementById('bottomBar').style.display = 'none';
+                document.getElementById('victoryModal').classList.remove('hidden');
+                
+                document.getElementById('finalScore').innerText = this.state.score;
+                const starHTML = Array(3).fill('').map((_,i) => i < stars ? '⭐' : '<span class="opacity-30 grayscale">⭐</span>').join('');
+                document.getElementById('starsContainer').innerHTML = starHTML;
+            }
+        };
+
+        /* =========================================
+           4. AR, Canvas & MediaPipe Logic
+           ========================================= */
+        const videoElement = document.getElementById('input_video');
+        const canvasElement = document.getElementById('output_canvas');
+        const canvasCtx = canvasElement.getContext('2d');
+
+        const ARSystem = {
+            lockedBubbleIndex: -1, isGesturing: false, gestureCooldown: false, particles: [], webShot: null,
+
+            resizeCanvas() {
+                canvasElement.width = window.innerWidth;
+                canvasElement.height = window.innerHeight;
+            },
+
+            mapCoords(landmark) {
+                if(!videoElement.videoWidth) return {x:0,y:0};
+                const canvasAspect = canvasElement.width / canvasElement.height;
+                const videoAspect = videoElement.videoWidth / videoElement.videoHeight;
+                let s, x, y;
+                if (canvasAspect > videoAspect) {
+                    s = canvasElement.width / videoElement.videoWidth;
+                    x = 0; y = (canvasElement.height - videoElement.videoHeight * s) / 2;
+                } else {
+                    s = canvasElement.height / videoElement.videoHeight;
+                    x = (canvasElement.width - videoElement.videoWidth * s) / 2; y = 0;
+                }
+                return { x: x + (1 - landmark.x) * videoElement.videoWidth * s, y: y + landmark.y * videoElement.videoHeight * s };
+            },
+
+            dist2D(p1, p2) { return Math.hypot(p1.x - p2.x, p1.y - p2.y); },
+
+            detectWebGesture(landmarksCanvas) {
+                const wrist = landmarksCanvas[0];
+                const dIndex = this.dist2D(wrist, landmarksCanvas[8]), dPinky = this.dist2D(wrist, landmarksCanvas[20]);
+                const dMid = this.dist2D(wrist, landmarksCanvas[12]), dRing = this.dist2D(wrist, landmarksCanvas[16]);
+                const dIndexPip = this.dist2D(wrist, landmarksCanvas[6]), dPinkyPip = this.dist2D(wrist, landmarksCanvas[18]);
+                const dMidPip = this.dist2D(wrist, landmarksCanvas[10]), dRingPip = this.dist2D(wrist, landmarksCanvas[14]);
+                
+                return (dIndex > dIndexPip * 1.1 && dPinky > dPinkyPip * 1.1 && dMid < dMidPip * 0.9 && dRing < dRingPip * 0.9);
+            },
+
+            isBackOfHand(landmarksCanvas) {
+                const wrist = landmarksCanvas[0], indexMcp = landmarksCanvas[5], pinkyMcp = landmarksCanvas[17];
+                const v1 = { x: indexMcp.x - wrist.x, y: indexMcp.y - wrist.y };
+                const v2 = { x: pinkyMcp.x - wrist.x, y: pinkyMcp.y - wrist.y };
+                return ((v1.x * v2.y) - (v1.y * v2.x)) < 0; 
+            },
+
+            drawGlove(landmarksCanvas) {
+                const isBack = this.isBackOfHand(landmarksCanvas);
+                canvasCtx.lineWidth = 3; canvasCtx.strokeStyle = 'rgba(220, 38, 38, 0.7)';
+                const connect = (p1, p2) => {
+                    canvasCtx.beginPath(); canvasCtx.moveTo(landmarksCanvas[p1].x, landmarksCanvas[p1].y);
+                    canvasCtx.lineTo(landmarksCanvas[p2].x, landmarksCanvas[p2].y); canvasCtx.stroke();
+                };
+                for(let i=0; i<4; i++) {
+                    connect(0, i+1); connect(1+i*4, 2+i*4); connect(2+i*4, 3+i*4); connect(3+i*4, 4+i*4);
+                }
+                connect(5,9); connect(9,13); connect(13,17); connect(0,5); connect(0,17);
+
+                canvasCtx.fillStyle = '#1e3a8a';
+                landmarksCanvas.forEach((lm, i) => {
+                    if(i===0 || i%4===1 || i%4===0) return;
+                    canvasCtx.beginPath(); canvasCtx.arc(lm.x, lm.y, 6, 0, 2 * Math.PI); canvasCtx.fill(); canvasCtx.stroke();
+                });
+
+                const center = { x: (landmarksCanvas[0].x + landmarksCanvas[9].x) / 2, y: (landmarksCanvas[0].y + landmarksCanvas[9].y) / 2 };
+
+                if (isBack) {
+                    canvasCtx.fillStyle = '#000'; canvasCtx.strokeStyle = '#fbbf24'; canvasCtx.lineWidth = 2;
+                    canvasCtx.beginPath(); canvasCtx.arc(center.x, center.y, 20, 0, 2*Math.PI); canvasCtx.fill(); canvasCtx.stroke();
+                    canvasCtx.beginPath(); canvasCtx.moveTo(center.x-10, center.y-10); canvasCtx.lineTo(center.x-30, center.y-20);
+                    canvasCtx.moveTo(center.x+10, center.y-10); canvasCtx.lineTo(center.x+30, center.y-20); canvasCtx.stroke();
+                } else {
+                    canvasCtx.shadowBlur = 15; canvasCtx.shadowColor = '#22d3ee'; canvasCtx.fillStyle = '#fff';
+                    canvasCtx.beginPath(); canvasCtx.arc(center.x, center.y, 15, 0, 2*Math.PI); canvasCtx.fill();
+                    canvasCtx.strokeStyle = '#22d3ee'; canvasCtx.lineWidth = 4;
+                    canvasCtx.beginPath(); canvasCtx.arc(center.x, center.y, 25, 0, 2*Math.PI); canvasCtx.stroke();
+                    canvasCtx.shadowBlur = 0;
+                }
+
+                [8, 20].forEach(idx => {
+                    canvasCtx.shadowBlur = 10; canvasCtx.shadowColor = '#fff'; canvasCtx.fillStyle = '#22d3ee';
+                    canvasCtx.beginPath(); canvasCtx.arc(landmarksCanvas[idx].x, landmarksCanvas[idx].y, 8, 0, 2*Math.PI);
+                    canvasCtx.fill(); canvasCtx.shadowBlur = 0;
+                });
+                return center;
+            },
+
+            updateTargeting(centerPoint) {
+                if(!Game.state.isPlaying || Game.state.isAnimating) return;
+                const bubbles = document.querySelectorAll('.bubble-item');
+                let closestIdx = -1, minDist = 150;
+                bubbles.forEach((b, idx) => {
+                    b.classList.remove('locked');
+                    const rect = b.getBoundingClientRect();
+                    const bCenter = { x: rect.left + rect.width/2, y: rect.top + rect.height/2 };
+                    const d = this.dist2D(centerPoint, bCenter);
+                    if(d < minDist) { minDist = d; closestIdx = idx; }
+                });
+
+                const toast = document.getElementById('toastAlert');
+                if (closestIdx !== -1) {
+                    bubbles[closestIdx].classList.add('locked');
+                    this.lockedBubbleIndex = closestIdx;
+                    toast.classList.remove('hidden');
+                } else {
+                    this.lockedBubbleIndex = -1; toast.classList.add('hidden');
+                }
+            },
+
+            triggerWebShoot(targetDom) {
+                const rect = targetDom.getBoundingClientRect();
+                this.webShot = {
+                    startX: this.lastPalmPos ? this.lastPalmPos.x : canvasElement.width/2,
+                    startY: this.lastPalmPos ? this.lastPalmPos.y : canvasElement.height,
+                    endX: rect.left + rect.width/2, endY: rect.top + rect.height/2, progress: 0
+                };
+            },
+
+            drawWebShot() {
+                if(!this.webShot) return;
+                this.webShot.progress += 0.1;
+                const currX = this.webShot.startX + (this.webShot.endX - this.webShot.startX) * this.webShot.progress;
+                const currY = this.webShot.startY + (this.webShot.endY - this.webShot.startY) * this.webShot.progress;
+                const ctrlX = (this.webShot.startX + currX) / 2 + 50, ctrlY = (this.webShot.startY + currY) / 2 - 50;
+
+                canvasCtx.shadowBlur = 20; canvasCtx.shadowColor = '#fff'; canvasCtx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+                canvasCtx.lineWidth = 6; canvasCtx.lineCap = 'round';
+                canvasCtx.beginPath(); canvasCtx.moveTo(this.webShot.startX, this.webShot.startY);
+                canvasCtx.quadraticCurveTo(ctrlX, ctrlY, currX, currY); canvasCtx.stroke();
+                canvasCtx.shadowBlur = 0;
+
+                if(this.webShot.progress >= 1) this.webShot = null;
+            },
+
+            spawnParticles(x, y, color) {
+                for(let i=0; i<15; i++) {
+                    this.particles.push({
+                        x: x, y: y, vx: (Math.random() - 0.5) * 15, vy: (Math.random() - 0.5) * 15, life: 1.0, color: color
+                    });
+                }
+            },
+            
+            drawParticles() {
+                for(let i=this.particles.length-1; i>=0; i--) {
+                    let p = this.particles[i];
+                    p.x += p.vx; p.y += p.vy; p.life -= 0.05;
+                    if(p.life <= 0) { this.particles.splice(i, 1); continue; }
+                    canvasCtx.fillStyle = p.color; canvasCtx.globalAlpha = p.life;
+                    canvasCtx.beginPath(); canvasCtx.arc(p.x, p.y, 4, 0, Math.PI*2); canvasCtx.fill();
+                }
+                canvasCtx.globalAlpha = 1.0;
+            },
+
+            onResults(results) {
+                canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+                if (results.image) {
+                    const canvasAspect = canvasElement.width / canvasElement.height;
+                    const videoAspect = results.image.width / results.image.height;
+                    let s, dx, dy, dw, dh;
+                    if (canvasAspect > videoAspect) {
+                        s = canvasElement.width / results.image.width; dw = canvasElement.width; dh = results.image.height * s;
+                        dx = 0; dy = (canvasElement.height - dh) / 2;
+                    } else {
+                        s = canvasElement.height / results.image.height; dh = canvasElement.height; dw = results.image.width * s;
+                        dx = (canvasElement.width - dw) / 2; dy = 0;
+                    }
+                    canvasCtx.save(); canvasCtx.scale(-1, 1); canvasCtx.translate(-canvasElement.width, 0);
+                    canvasCtx.drawImage(results.image, -dx, dy, dw, dh); canvasCtx.restore();
+                }
+
+                if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                    const landmarksCanvas = results.multiHandLandmarks[0].map(lm => this.mapCoords(lm));
+                    this.lastPalmPos = this.drawGlove(landmarksCanvas);
+                    this.updateTargeting(this.lastPalmPos);
+
+                    const isSpiderman = this.detectWebGesture(landmarksCanvas);
+                    if (isSpiderman && !this.isGesturing) {
+                        this.isGesturing = true;
+                        if (!this.gestureCooldown && Game.state.isPlaying && !Game.state.isAnimating) {
+                            if (this.lockedBubbleIndex !== -1) Game.shootWebTo(this.lockedBubbleIndex);
+                            this.gestureCooldown = true; setTimeout(() => { this.gestureCooldown = false; }, 1500);
+                        }
+                    } else if (!isSpiderman) {
+                        this.isGesturing = false;
+                    }
+                } else {
+                    this.updateTargeting({x: -1000, y: -1000});
+                }
+                this.drawWebShot(); this.drawParticles();
+            }
+        };
+
+        /* =========================================
+           5. Initialization
+           ========================================= */
+        window.addEventListener('resize', ARSystem.resizeCanvas);
+        ARSystem.resizeCanvas();
+        Game.init();
+
+        const hands = new Hands({locateFile: (file) => {
+            return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+        }});
+        hands.setOptions({
+            maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7
+        });
+        hands.onResults(ARSystem.onResults.bind(ARSystem));
+
+        const camera = new Camera(videoElement, {
+            onFrame: async () => { await hands.send({image: videoElement}); },
+            width: 1280, height: 720, facingMode: 'user'
+        });
+        
+        camera.start().then(() => {
+            const startBtn = document.getElementById('startBtn');
+            const loadingText = document.getElementById('loadingText');
+            startBtn.disabled = false;
+            loadingText.innerText = "ระบบชุดสูทพร้อมใช้งาน! กล้องเชื่อมต่อแล้ว ✅";
+            loadingText.classList.replace('text-yellow-400', 'text-green-400');
+            loadingText.classList.remove('animate-pulse');
+        }).catch(err => {
+            alert("ไม่สามารถเข้าถึงกล้องได้ กรุณาอนุญาตการใช้งานกล้องในเบราว์เซอร์\n" + err);
+        });
+    </script>
+</body>
+</html>
